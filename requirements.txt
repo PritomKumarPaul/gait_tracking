@@ -31,3 +31,6 @@ paddlepaddle-gpu
 torch==1.12.1
 torchaudio==0.12.1
 torchvision==0.13.1
+gradio>=4.0.0
+imageio-ffmpeg>=0.4.0
+yolox

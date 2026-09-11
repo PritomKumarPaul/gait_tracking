@@ -88,6 +88,8 @@ class Predictor_opengait:
 
         pred_cfg = PredictConfig(self.cfg.model, self.cfg.params)
         pred_cfg.disable_glog_info()
+        if hasattr(pred_cfg, 'disable_mkldnn'):
+            pred_cfg.disable_mkldnn()
         # 先不谈gpu和下面一些奇怪的东西
 
         # if self.args.use_gpu:

@@ -20,9 +20,13 @@ sys.path.append((os.path.dirname(os.path.abspath(__file__) )) + "/paddle/")
 from seg_demo import seg_image
 from yolox.exp import get_exp
 
+LIB_DIR = Path(__file__).resolve().parent
+REPO_ROOT = LIB_DIR.parents[1]
+SEG_MODEL_PATH = REPO_ROOT / "demo" / "checkpoints" / "seg_model" / "human_pp_humansegv2_mobile_192x192_inference_model_with_softmax" / "deploy.yaml"
+
 seg_cfgs = {  
     "model":{
-        "seg_model" : "./demo/checkpoints/seg_model/human_pp_humansegv2_mobile_192x192_inference_model_with_softmax/deploy.yaml",
+        "seg_model" : str(SEG_MODEL_PATH),
     },
     "gait":{
         "dataset": "GREW",
@@ -39,21 +43,31 @@ def imageflow_demo(video_path, track_result, sil_save_path):
     Returns:
         Path: The directory of silhouette
     """
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(str(video_path))
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_id = 0
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    save_video_name = video_path.split("/")[-1]
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    save_video_name = Path(video_path).stem
 
-    save_video_name = save_video_name.split(".")[0]
     results = []
     ids = list(track_result.keys())
+
+    # Pre-warm Paddle predictor once for the entire video
+    seg_model_cfg = seg_cfgs["model"]["seg_model"]
+    predictor = None
+    if Path(seg_model_cfg).exists():
+        try:
+            from seg_demo import get_seg_predictor
+            predictor = get_seg_predictor(seg_model_cfg)
+        except Exception:
+            predictor = None
+
     for i in tqdm(range(frame_count)):
         ret_val, frame = cap.read()
         if ret_val:
-            if frame_id in ids and frame_id%4==0:
+            if frame_id in ids and frame_id % 4 == 0:
                 for tidxywh in track_result[frame_id]:
                     tid = tidxywh[0]
                     tidstr = "{:03d}".format(tid)
@@ -76,19 +90,14 @@ def imageflow_demo(video_path, track_result, sil_save_path):
                     tmp = frame[y1_new: y2_new, x1_new: x2_new, :]
 
                     save_name = "{:03d}-{:03d}.png".format(tid, frame_id)
-                    side = max(new_w,new_h)
-                    tmp_new = [[[255,255,255]]*side]*side
-                    tmp_new = np.array(tmp_new)
-                    width = math.floor((side-new_w)/2)
-                    height = math.floor((side-new_h)/2)
-                    tmp_new[int(height):int(height+new_h),int(width):int(width+new_w),:] = tmp
-                    tmp_new = tmp_new.astype(np.uint8)
-                    tmp = cv2.resize(tmp_new,(192,192))
-                    seg_image(tmp, seg_cfgs["model"]["seg_model"], save_name, savesil_path)
+                    side = max(new_w, new_h)
+                    tmp_new = np.full((side, side, 3), 255, dtype=np.uint8)
+                    offset_x = (side - new_w) // 2
+                    offset_y = (side - new_h) // 2
+                    tmp_new[offset_y:offset_y + new_h, offset_x:offset_x + new_w, :] = tmp
+                    tmp = cv2.resize(tmp_new, (192, 192))
+                    seg_image(tmp, seg_model_cfg, save_name, savesil_path, predictor=predictor)
 
-            ch = cv2.waitKey(1)
-            if ch == 27 or ch == ord("q") or ch == ord("Q"):
-                break
         else:
             break
         frame_id += 1
@@ -109,7 +118,7 @@ def seg(video_path, track_result, sil_save_path):
     return inputs
 
 def getsil(video_path, sil_save_path):
-    sil_save_name = video_path.split("/")[-1]
-    inputs = imgs2inputs(Path(sil_save_path, sil_save_name.split(".")[0]), 
+    sil_save_name = Path(video_path).stem
+    inputs = imgs2inputs(Path(sil_save_path, sil_save_name), 
                 64, False, seg_cfgs["gait"]["dataset"])
     return inputs

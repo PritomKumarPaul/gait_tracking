@@ -6,23 +6,31 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
-import torch
 
+try:
+    import torch
+except ImportError:
+    torch = None
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = REPO_ROOT.parent
-
-os.chdir(REPO_ROOT)
 
 sys.path.append(str(REPO_ROOT / "demo" / "libs"))
 sys.path.append(str(REPO_ROOT))
 sys.path.append(str(REPO_ROOT / "opengait"))
 
-from demo.libs.track import track  # noqa: E402
-from demo.libs.segment import seg  # noqa: E402
-import demo.libs.model.baselineDemo as baseline_demo  # noqa: E402
-from opengait.utils import config_loader  # noqa: E402
-from opengait.modeling import models  # noqa: E402
+try:
+    from demo.libs.track import track  # noqa: E402
+    from demo.libs.segment import seg  # noqa: E402
+    import demo.libs.model.baselineDemo as baseline_demo  # noqa: E402
+    from opengait.utils import config_loader  # noqa: E402
+    from opengait.modeling import models  # noqa: E402
+except Exception:
+    track = None
+    seg = None
+    baseline_demo = None
+    config_loader = None
+    models = None
 
 
 def log(message: str) -> None:

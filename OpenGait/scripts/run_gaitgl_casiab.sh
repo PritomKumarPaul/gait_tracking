@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="/home/ppaul11/All-in-One-Gait/OpenGait"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$REPO_ROOT/logs"
 mkdir -p "$LOG_DIR"
 
@@ -14,8 +14,10 @@ PY
 )
 
 cd "$REPO_ROOT"
-source /home/ppaul11/miniconda3/etc/profile.d/conda.sh
-conda activate allinonegait
+if command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)"
+  conda activate allinonegait 2>/dev/null || true
+fi
 
 TRAIN_LOG="$LOG_DIR/gaitgl_casiab_train.log"
 TEST_LOG="$LOG_DIR/gaitgl_casiab_test.log"

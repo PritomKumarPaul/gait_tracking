@@ -88,19 +88,30 @@ def makedirs(save_dir):
         os.makedirs(dirname)
 
 
-def seg_image(img, config, save_name, savesil_path):
-    predictor = Predictor_opengait(config)
-    bg_img = 255 * np.ones(img.shape)
+_cached_seg_predictors = {}
+
+
+def get_seg_predictor(config):
+    if config not in _cached_seg_predictors:
+        _cached_seg_predictors[config] = Predictor_opengait(config)
+    return _cached_seg_predictors[config]
+
+
+def seg_image(img, config, save_name, savesil_path, predictor=None):
+    if predictor is None:
+        predictor = get_seg_predictor(config)
+    bg_img = 255 * np.ones(img.shape, dtype=np.uint8)
     out_img, out_mask = predictor.run(img, bg_img)
 
     therehold = 80
     temp = out_mask < therehold
-    out_mask = np.where(temp, 0, 255)
+    out_mask = np.where(temp, 0, 255).astype(np.uint8)
     
     if not os.path.exists(savesil_path):
-        os.makedirs(savesil_path)
+        os.makedirs(savesil_path, exist_ok=True)
     savesil_name = os.path.join(savesil_path, save_name)
     cv2.imwrite(savesil_name, out_mask)
+    return out_mask
 
 
 

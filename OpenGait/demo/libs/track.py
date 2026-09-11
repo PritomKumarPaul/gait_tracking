@@ -16,15 +16,22 @@ from tracker.byte_tracker import BYTETracker
 from tracking_utils.timer import Timer
 from tracking_utils.visualize import plot_tracking, plot_track
 from pretreatment import pretreat, imgs2inputs
-sys.path.append((os.path.dirname(os.path.abspath(__file__) )) + "/paddle/")
-from seg_demo import seg_image
+try:
+    sys.path.append((os.path.dirname(os.path.abspath(__file__) )) + "/paddle/")
+    from seg_demo import seg_image
+except Exception:
+    seg_image = None
 from yolox.exp import get_exp
+
+LIB_DIR = Path(__file__).resolve().parent
+REPO_ROOT = LIB_DIR.parents[1]
+CHECKPOINTS_ROOT = REPO_ROOT / "demo" / "checkpoints" / "bytetrack_model"
 
 track_cfgs = {  
     "model":{
         # "seg_model" : "./demo/checkpoints/seg_model/human_pp_humansegv2_mobile_192x192_inference_model_with_softmax/deploy.yaml",
-        "ckpt" :    "./demo/checkpoints/bytetrack_model/bytetrack_x_mot17.pth.tar",# 1
-        "exp_file": "./demo/checkpoints/bytetrack_model/yolox_x_mix_det.py", # 4
+        "ckpt" :    str(CHECKPOINTS_ROOT / "bytetrack_x_mot17.pth.tar"),
+        "exp_file": str(CHECKPOINTS_ROOT / "yolox_x_mix_det.py"),
     },
     "gait":{
         "dataset": "GREW",
@@ -58,8 +65,22 @@ def loadckpt(exp):
         model = model.half()
     return model
 
-exp = get_exp(track_cfgs["model"]["exp_file"], None)
-model = loadckpt(exp)
+_cached_exp = None
+_cached_model = None
+
+def get_tracker_model():
+    global _cached_exp, _cached_model
+    if _cached_model is None:
+        _cached_exp = get_exp(track_cfgs["model"]["exp_file"], None)
+        _cached_model = loadckpt(_cached_exp)
+    return _cached_exp, _cached_model
+
+# For backwards compatibility if imported directly as attributes
+def __getattr__(name):
+    if name in ("exp", "model"):
+        e, m = get_tracker_model()
+        return e if name == "exp" else m
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 def track(video_path, video_save_folder):
     """Tracks person in the input video
@@ -70,12 +91,13 @@ def track(video_path, video_save_folder):
     Returns:
         track_results (dict): Track information
     """
+    tracker_exp, tracker_model = get_tracker_model()
     trt_file = None
     decoder = None
     device = torch.device("cuda" if track_cfgs["device"] == "gpu" else "cpu")
-    predictor = Predictor(model, exp, trt_file, decoder, device, device.type == "cuda")
+    predictor = Predictor(tracker_model, tracker_exp, trt_file, decoder, device, device.type == "cuda")
 
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(str(video_path))
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -83,16 +105,17 @@ def track(video_path, video_save_folder):
     tracker = BYTETracker(frame_rate=30)
     timer = Timer()
     frame_id = 0
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     os.makedirs(video_save_folder, exist_ok=True)
-    save_video_name = video_path.split("/")[-1]
+    video_p = Path(video_path)
+    save_video_name = video_p.name
+    save_video_stem = video_p.stem
     save_video_path = osp.join(video_save_folder, save_video_name)
     print(f"video save_path is {save_video_path}")
     vid_writer = cv2.VideoWriter(
         save_video_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
     )
 
-    save_video_name = save_video_name.split(".")[0]
     results = []
     track_results={}
     mark = True
@@ -103,7 +126,7 @@ def track(video_path, video_save_folder):
         if ret_val:
             outputs, img_info = predictor.inference(frame, timer)
             if outputs[0] is not None:
-                online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width']], exp.test_size)
+                online_targets = tracker.update(outputs[0], [img_info['height'], img_info['width']], tracker_exp.test_size)
                 online_tlwhs = []
                 online_ids = []
                 online_scores = []
@@ -134,15 +157,12 @@ def track(video_path, video_save_folder):
                 online_im = img_info['raw_img']
             if track_cfgs["save_result"] == "True":
                 vid_writer.write(online_im)
-            ch = cv2.waitKey(1)
-            if ch == 27 or ch == ord("q") or ch == ord("Q"):
-                break
         else:
             break
         frame_id += 1
 
     if track_cfgs["save_result"] == "True":
-        res_file = osp.join(video_save_folder, f"{save_video_name}.txt")
+        res_file = osp.join(video_save_folder, f"{save_video_stem}.txt")
         with open(res_file, 'w') as f:
             f.writelines(results)
         logger.info(f"save results to {res_file}")

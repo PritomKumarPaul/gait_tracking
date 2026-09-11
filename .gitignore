@@ -51,7 +51,9 @@ OpenGait/report/
 gaitbase.pdf
 
 # Misc local files seen in this workspace
-=2.2.0
-
 .codex
 .codex/
+.gradio/
+*.jpg
+*.jpeg
+*.png
